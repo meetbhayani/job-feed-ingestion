@@ -1,0 +1,8 @@
+{
+  "defaultOutcome": "success",
+  "rules": [
+    { "tenantId": "tenant-429", "sourceId": "main", "externalJobId": "retry-429", "outcome": "429" },
+    { "tenantId": "tenant-503", "sourceId": "main", "externalJobId": "retry-503", "outcome": "503" },
+    { "tenantId": "tenant-422", "sourceId": "main", "externalJobId": "permanent-422", "outcome": "422" }
+  ]
+}
