@@ -267,6 +267,11 @@ async function applyJobProjection(event: EventRecord): Promise<void> {
 async function handleRetry(event: EventRecord, providerOutcome: { status: string; code: number; reason: string }): Promise<void> {
   const db = await getDb();
   const attemptCount = event.attemptCount;
+  const eventId = event._id;
+
+  if (!eventId) {
+    throw new Error('Cannot retry an event without a Mongo _id');
+  }
 
   if (attemptCount >= config.maxAttempts) {
     await finalizeEvent(event, 'retry-exhausted', providerOutcome.reason, 'failed', providerOutcome.code);
@@ -276,7 +281,7 @@ async function handleRetry(event: EventRecord, providerOutcome: { status: string
   const backoffMs = config.retryBackoffMs * attemptCount;
   const nextAvailableAt = new Date(Date.now() + backoffMs);
   await db.collection<EventRecord>('events').updateOne(
-    { _id: event._id },
+    { _id: eventId },
     {
       $set: {
         processingStatus: 'pending',
@@ -309,9 +314,14 @@ async function finalizeEvent(
 ): Promise<void> {
   const db = await getDb();
   const now = new Date();
+  const eventId = event._id;
+
+  if (!eventId) {
+    throw new Error('Cannot finalize an event without a Mongo _id');
+  }
 
   await db.collection<EventRecord>('events').updateOne(
-    { _id: event._id },
+    { _id: eventId },
     {
       $set: {
         processingStatus: status,

@@ -22,10 +22,18 @@ describe('event validation', () => {
     });
 
     expect(result.ok).toBe(true);
-    if (result.ok && result.event.payload) {
-      expect(result.event.payload.title).toBe('Full Stack Developer');
-      expect(result.event.payload.skills).toEqual(['typescript', 'mongodb']);
+    if (!result.ok) {
+      return;
     }
+
+    const payload = result.event.payload;
+    expect(payload).toBeDefined();
+    if (!payload) {
+      return;
+    }
+
+    expect(payload.title).toBe('Full Stack Developer');
+    expect(payload.skills).toEqual(['typescript', 'mongodb']);
   });
 
   it('rejects identifiers with surrounding whitespace', () => {
