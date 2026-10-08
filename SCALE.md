@@ -1,0 +1,5 @@
+# Scale notes
+
+These are planning calculations, not benchmark claims. 10M/day averages about 116 events/s; design for 5,000/s bursts. At 1KB raw payload and seven-day retention, raw events alone are about 70GB before indexes and replication; current projections are about one million. Assuming 50 verified events/s per worker, 5,000/s needs roughly 100 workers plus headroom. Clearing five minutes of burst backlog in five minutes needs comparable spare capacity.
+
+Use replica sets, the identity/claim/listing indexes, bounded connections/workers, per-tenant fairness, admission backpressure, jittered retry control, and alerts for queue age, processing lag, retries/failures and database saturation. TTL only terminal raw events if audit policy permits; never TTL jobs. Hot tenant/job keys create conditional-write contention. Shard primarily by tenant while preserving identity uniqueness tradeoffs. A separate broker becomes appropriate when Mongo polling/claim scans and fairness controls cannot meet sustained burst capacity.

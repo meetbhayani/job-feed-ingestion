@@ -1,0 +1,3 @@
+# AI usage
+
+Codex (GPT-5 family) assisted source review, focused recovery/type-safety changes and documentation. Prompt summary: implement the supplied Artha.link MongoDB job-feed assignment without adding production infrastructure. The in-memory MongoDB fallback was removed and timed-out processing claims were made recoverable. Independent verification: strict TypeScript check passed. Docker integration checks remain honestly recorded in QC_REPORT.md.
