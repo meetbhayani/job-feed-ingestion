@@ -1,0 +1,13 @@
+# Dependencies and build artifacts
+node_modules/
+dist/
+
+# Local environment configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Test/tool temporary files
+vitest/
+*.timestamp-*-*.mjs
+
