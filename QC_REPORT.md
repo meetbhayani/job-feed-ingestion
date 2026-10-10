@@ -8,7 +8,7 @@ Verified code commit: `e2a7c74876f3ea41db4d0d285dba16b1b56ec10e`
 
 The QC report is committed after the verified code commit. Its commit is the final repository HEAD; the exact final HEAD SHA is provided in the final handoff because embedding a commit's own hash in the file changes that hash.
 
-All integration, demo, and load verification below used `mongodb://127.0.0.1:27017/job_feed_ingestion_submission_verify`. The MongoDB container was healthy. The demo resets collections, so this isolated database was used for it as well.
+The final user-run verification used `mongodb://127.0.0.1:27017/job_feed_ingestion_review`. The MongoDB container was healthy. The demo resets collections, so this isolated database was used for it as well. Earlier verification of the same code commit used a separate disposable database.
 
 ## Verification evidence
 
@@ -17,9 +17,9 @@ All integration, demo, and load verification below used `mongodb://127.0.0.1:270
 | Docker Compose setup | `docker compose up -d --wait` | Passed; MongoDB 7 container healthy. |
 | Clean dependencies | `npm ci` | Passed; installed 168 packages. npm reported advisories, detailed below. |
 | Strict TypeScript | `npm run typecheck` | Passed (`tsc --noEmit -p tsconfig.json`). |
-| Unit and MongoDB integration tests | `npm test` with isolated `MONGODB_URI` | Passed; 3 test files, 14 tests. Integration tests used the live local MongoDB service. |
-| Fixture demo | `npm run demo` with isolated `MONGODB_URI` | Passed; fixture phases completed, including expected invalid input and exact replay responses. |
-| Complete load test | `$env:LOAD_PORT='3210'; npm run loadtest` with isolated `MONGODB_URI` and minimum defaults | Passed; actual results below. |
+| Unit and MongoDB integration tests | `npm test` with `MONGODB_URI=.../job_feed_ingestion_review` | Passed; 3 test files, 14 tests. Integration tests used the live local MongoDB service. |
+| Fixture demo | `npm run demo` with `MONGODB_URI=.../job_feed_ingestion_review` | Passed; fixture phases completed, including expected invalid input and exact replay responses. |
+| Complete load test | `npm run loadtest` with `MONGODB_URI=.../job_feed_ingestion_review` and minimum defaults | Passed; actual results below. |
 | Load minimum guard | `$env:LOAD_COUNT='999'; npm run loadtest` | Rejected as expected with exit code 1 and `LOAD_COUNT must be at least 1000`; validation runs before connecting to MongoDB. |
 | Diff whitespace | `git diff --check` | Passed. |
 | Formatting/lint | Checked `package.json` scripts and root config files | Not configured; no formatter or linter command exists. |
@@ -29,19 +29,19 @@ All integration, demo, and load verification below used `mongodb://127.0.0.1:270
 ### Measured load result
 
 - Machine: `DESKTOP-FANPERU`
-- MongoDB: `job_feed_ingestion_submission_verify` on local MongoDB 7
+- MongoDB: `job_feed_ingestion_review` on local MongoDB 7
 - Concurrency: 25
 - Distinct accepted events: 1,100
 - Exact replay requests handled: 200
 - HTTP/network errors: 0
-- HTTP p50: 49.19 ms
-- HTTP p95: 76.19 ms
-- Workload start to observed queue drain: 14,056 ms
+- HTTP p50: 39.68 ms
+- HTTP p95: 62.96 ms
+- Workload start to observed queue drain: 9,706 ms
 - Events stored and completed: 1,100 / 1,100
 - Expected logical jobs: 1,050; actual: 1,050
 - Out-of-order jobs: 50; final version 2: 50 / 50
 - Unrelated tenant probe: preserved
-- Fixture demo data after the load run: tenant `tenant-a` retained 13 events and 6 jobs.
+- Load-test run completed with the default `LOAD_PORT` (3100); no port override was required.
 
 These are local development measurements, not production throughput claims.
 
@@ -72,7 +72,7 @@ Planning assumptions, not measured service capacity:
 
 ## Data-safety disclosure
 
-An exploratory integration test was run before the verification database was isolated. It used the default `MONGODB_URI` database (`job_feed_ingestion`); the integration test setup calls `resetCollections()`, which deletes that database's `events` and `jobs` collections. I cannot determine whether those collections held user data or restore their pre-run contents without a backup. All later verification used the isolated `job_feed_ingestion_submission_verify` database. The load test itself uses only tenant-scoped cleanup and verified its unrelated tenant probe and demo tenant data were preserved.
+An exploratory integration test was run before the verification database was isolated. It used the default `MONGODB_URI` database (`job_feed_ingestion`); the integration test setup calls `resetCollections()`, which deletes that database's `events` and `jobs` collections. I cannot determine whether those collections held user data or restore their pre-run contents without a backup. Later verification used isolated `job_feed_ingestion_submission_verify` and `job_feed_ingestion_review` databases. The load test itself uses only tenant-scoped cleanup and verified its unrelated tenant probe remained preserved.
 
 ## Remaining risks and limitations
 

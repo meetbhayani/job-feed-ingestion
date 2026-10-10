@@ -45,4 +45,4 @@ Processing is durable and idempotent at the projection boundary, not exactly-onc
 
 ## Load result
 
-Fresh local verification on 2026-10-10 using Docker MongoDB on `DESKTOP-FANPERU`: concurrency 25; 1,100 distinct accepts; 200 exact replays; 0 errors; HTTP p50 49.19 ms; p95 76.19 ms; workload-to-drained time 14.06 s; 1,050/1,050 final jobs; all 50 out-of-order jobs ended at version 2. The script enforces at least 1,000 distinct events, 200 replays, and 50 out-of-order jobs, scopes cleanup to UUID-namespaced test tenants, and verifies an unrelated tenant probe remains unchanged. These local results are not production-capacity claims.
+Fresh local verification on 2026-10-10 using Docker MongoDB on `DESKTOP-FANPERU`: concurrency 25; 1,100 distinct accepts; 200 exact replays; 0 errors; HTTP p50 39.68 ms; p95 62.96 ms; workload-to-drained time 9.71 s; 1,050/1,050 final jobs; all 50 out-of-order jobs ended at version 2. The script enforces at least 1,000 distinct events, 200 replays, and 50 out-of-order jobs, scopes cleanup to UUID-namespaced test tenants, and verifies an unrelated tenant probe remains unchanged. These local results are not production-capacity claims.
