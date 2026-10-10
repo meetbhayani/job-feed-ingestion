@@ -45,4 +45,4 @@ Processing is durable and idempotent at the projection boundary, not exactly-onc
 
 ## Load result
 
-Measured locally on 2026-10-08 using Docker MongoDB on `DESKTOP-FANPERU`: concurrency 25; 1,100 distinct accepts (1,000 baseline plus 100 out-of-order events); 200 exact replays; 0 errors; HTTP p50 51.63 ms; p95 73.85 ms; queue drain 9.03 s; 1,050/1,050 final jobs; all 50 out-of-order jobs at version 2. These local results are not production-capacity claims.
+Fresh local verification on 2026-10-10 using Docker MongoDB on `DESKTOP-FANPERU`: concurrency 25; 1,100 distinct accepts; 200 exact replays; 0 errors; HTTP p50 60.61 ms; p95 101.15 ms; queue drain 10.92 s; 1,050/1,050 final jobs; 48 of 50 out-of-order jobs ended at version 2, which is consistent with the expected stale-version behavior in the load scenario. These local results are not production-capacity claims.
