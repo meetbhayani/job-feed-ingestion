@@ -4,7 +4,7 @@ Date: 2026-10-10
 
 Environment: Windows, `DESKTOP-FANPERU`, Node.js 26.1, npm, Docker Compose with MongoDB 7.
 
-Verified code commit: `b02e691a3045dbbfa3daa3c0cac5c9998f79fc7a`
+Verified code commit: `e2a7c74876f3ea41db4d0d285dba16b1b56ec10e`
 
 The QC report is committed after the verified code commit. Its commit is the final repository HEAD; the exact final HEAD SHA is provided in the final handoff because embedding a commit's own hash in the file changes that hash.
 
@@ -19,7 +19,7 @@ All integration, demo, and load verification below used `mongodb://127.0.0.1:270
 | Strict TypeScript | `npm run typecheck` | Passed (`tsc --noEmit -p tsconfig.json`). |
 | Unit and MongoDB integration tests | `npm test` with isolated `MONGODB_URI` | Passed; 3 test files, 14 tests. Integration tests used the live local MongoDB service. |
 | Fixture demo | `npm run demo` with isolated `MONGODB_URI` | Passed; fixture phases completed, including expected invalid input and exact replay responses. |
-| Complete load test | `npm run loadtest` with isolated `MONGODB_URI` and minimum defaults | Passed; actual results below. |
+| Complete load test | `$env:LOAD_PORT='3210'; npm run loadtest` with isolated `MONGODB_URI` and minimum defaults | Passed; actual results below. |
 | Load minimum guard | `$env:LOAD_COUNT='999'; npm run loadtest` | Rejected as expected with exit code 1 and `LOAD_COUNT must be at least 1000`; validation runs before connecting to MongoDB. |
 | Diff whitespace | `git diff --check` | Passed. |
 | Formatting/lint | Checked `package.json` scripts and root config files | Not configured; no formatter or linter command exists. |
@@ -34,9 +34,9 @@ All integration, demo, and load verification below used `mongodb://127.0.0.1:270
 - Distinct accepted events: 1,100
 - Exact replay requests handled: 200
 - HTTP/network errors: 0
-- HTTP p50: 68.42 ms
-- HTTP p95: 104.40 ms
-- Workload start to observed queue drain: 17,441 ms
+- HTTP p50: 49.19 ms
+- HTTP p95: 76.19 ms
+- Workload start to observed queue drain: 14,056 ms
 - Events stored and completed: 1,100 / 1,100
 - Expected logical jobs: 1,050; actual: 1,050
 - Out-of-order jobs: 50; final version 2: 50 / 50
@@ -49,7 +49,7 @@ These are local development measurements, not production throughput claims.
 
 1. **Concurrent versions or archive/upsert leave a lower projection.** Real MongoDB integration tests race version 1 against version 2, and an upsert against a version-2 archive for a new identity. The final versions/statuses are correct and each logical identity has one job document. Duplicate-key handling re-reads the identity, treats equal/newer projections as stale, retries only an existing lower-version projection, and propagates unresolved errors.
 2. **A crash after projection is only represented by manually prepared state.** The recovery test submits a real event, claims it through `processClaimedEvent()`, executes provider verification and the actual projection write, then throws before acknowledgment. It verifies the abandoned processing state, advances the same job to version 2, expires the old claim, and recovers version 1 as `stale-noop`. It checks both attempt histories, final version/title, completed statuses, and one logical job.
-3. **Load cleanup can erase another tenant's data or hide bad final versions.** The load script uses a per-run UUID namespace, tenant-scoped cleanup only, submits version 2 before version 1 in separate awaited batches, checks every out-of-order projection's version/status, and preserves a distinct tenant sentinel. Demo tenant records were separately counted before/after load and remained present.
+3. **Load cleanup can erase another tenant's data or hide bad final versions.** The load script uses a per-run UUID namespace, tenant-scoped cleanup only, submits version 2 before version 1 in separate awaited batches, compares complete expected and actual job identity sets, checks every out-of-order projection's version/status, and preserves a distinct tenant sentinel. Demo tenant records were separately counted before/after load and remained present.
 4. **Scaling text presents a burst estimate as a measurement or drains against burst rather than baseline arrival.** `SCALE.md` labels estimates as theoretical, calculates backlog with the specified max formula, and drains against the ongoing 10-million/day rate. README load metrics were compared with the final script output.
 
 ## Implementation and documentation review
