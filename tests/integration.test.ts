@@ -4,7 +4,8 @@ import { createApp } from '../src/app.js';
 import { config } from '../src/config.js';
 import { closeDatabase, connectDatabase, resetCollections } from '../src/db.js';
 import { getDb } from '../src/db.js';
-import { claimNextEvent, processClaimedEvent } from '../src/service.js';
+import { applyJobProjection, processClaimedEvent } from '../src/service.js';
+import type { EventRecord } from '../src/types.js';
 
 let app: ReturnType<typeof createApp>['app'];
 let stopWorkers: () => void;
@@ -234,6 +235,96 @@ describe('ingestion service', () => {
       expect(await db.collection('jobs').countDocuments({ externalJobId: 'recover-job' })).toBe(1);
     } finally { config.claimTimeoutMs = originalTimeout; }
   });
+
+  it('keeps the newest projection version when concurrent upserts race', async () => {
+    await restartApp();
+
+    const v1: EventRecord = {
+      tenantId: 'tenant-race',
+      sourceId: 'main',
+      eventId: 'event-race-1',
+      externalJobId: 'race-job',
+      version: 1,
+      operation: 'upsert' as const,
+      payload: {
+        title: 'Version 1',
+        company: 'Example Labs',
+        location: 'Surat',
+        experienceMin: 1,
+        experienceMax: 2,
+        applyUrl: 'https://example.test/jobs/race-job-v1',
+        skills: ['node'],
+      },
+      payloadHash: 'race-v1',
+      processingStatus: 'pending',
+      availableAt: new Date(),
+      claimedAt: null,
+      claimedBy: null,
+      attemptCount: 0,
+      attemptHistory: [],
+      lastError: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      completedAt: null,
+    };
+
+    const v2: EventRecord = {
+      tenantId: 'tenant-race',
+      sourceId: 'main',
+      eventId: 'event-race-2',
+      externalJobId: 'race-job',
+      version: 2,
+      operation: 'upsert' as const,
+      payload: {
+        title: 'Version 2',
+        company: 'Example Labs',
+        location: 'Bengaluru',
+        experienceMin: 3,
+        experienceMax: 5,
+        applyUrl: 'https://example.test/jobs/race-job-v2',
+        skills: ['node', 'mongodb'],
+      },
+      payloadHash: 'race-v2',
+      processingStatus: 'pending',
+      availableAt: new Date(),
+      claimedAt: null,
+      claimedBy: null,
+      attemptCount: 0,
+      attemptHistory: [],
+      lastError: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      completedAt: null,
+    };
+
+    await Promise.all([applyJobProjection(v1), applyJobProjection(v2)]);
+
+    const db = await getDb();
+    const job = await db.collection('jobs').findOne({ tenantId: 'tenant-race', sourceId: 'main', externalJobId: 'race-job' });
+    expect(job?.currentVersion).toBe(2);
+    expect(job?.location).toBe('Bengaluru');
+    expect(await db.collection('jobs').countDocuments({ tenantId: 'tenant-race', sourceId: 'main', externalJobId: 'race-job' })).toBe(1);
+
+    const concurrentUpsert: EventRecord = {
+      ...v1,
+      eventId: 'event-archive-race-upsert',
+      externalJobId: 'archive-race-job',
+    };
+    const concurrentArchive: EventRecord = {
+      ...v2,
+      eventId: 'event-archive-race-archive',
+      externalJobId: 'archive-race-job',
+      operation: 'archive',
+      payload: undefined,
+    };
+    await Promise.all([applyJobProjection(concurrentUpsert), applyJobProjection(concurrentArchive)]);
+
+    const archivedJob = await db.collection('jobs').findOne({ tenantId: 'tenant-race', sourceId: 'main', externalJobId: 'archive-race-job' });
+    expect(archivedJob?.currentVersion).toBe(2);
+    expect(archivedJob?.currentStatus).toBe('archived');
+    expect(archivedJob?.title).toBeNull();
+  });
+
   it('supports deterministic cursor pagination for jobs listing', async () => {
     await restartApp();
 
@@ -277,10 +368,10 @@ describe('ingestion service', () => {
     expect(secondPage.body.nextCursor).not.toBeNull();
   });
 
-  it('rejects malformed pagination cursors and recovers after a projection write before ack', async () => {
+  it('rejects malformed pagination cursors and recovers an actual post-projection worker crash without overwriting a newer version', async () => {
     await restartApp();
     const originalTimeout = config.claimTimeoutMs;
-    config.claimTimeoutMs = 5;
+    config.claimTimeoutMs = 60000;
 
     try {
       await supertest(app)
@@ -305,52 +396,58 @@ describe('ingestion service', () => {
         .expect(202);
 
       const db = await getDb();
-      const claimed = await claimNextEvent('dead-worker-crash');
-      expect(claimed?.eventId).toBe('event-projection-crash');
+      await expect(processClaimedEvent('dead-worker-crash', async () => {
+        throw new Error('simulated process termination after projection write');
+      })).rejects.toThrow('simulated process termination after projection write');
 
-      await db.collection('jobs').updateOne(
-        {
+      const crashedEvent = await db.collection('events').findOne({ eventId: 'event-projection-crash' });
+      const firstProjection = await db.collection('jobs').findOne({ tenantId: 'tenant-crash', sourceId: 'main', externalJobId: 'job-projection-crash' });
+      expect(crashedEvent?.processingStatus).toBe('processing');
+      expect(crashedEvent?.attemptCount).toBe(1);
+      expect(crashedEvent?.attemptHistory).toHaveLength(0);
+      expect(firstProjection?.currentVersion).toBe(1);
+
+      await supertest(app)
+        .post('/events')
+        .send({
           tenantId: 'tenant-crash',
           sourceId: 'main',
+          eventId: 'event-projection-v2',
           externalJobId: 'job-projection-crash',
-          $or: [{ currentVersion: { $exists: false } }, { currentVersion: { $lt: 1 } }],
-        },
-        {
-          $set: {
-            tenantId: 'tenant-crash',
-            sourceId: 'main',
-            externalJobId: 'job-projection-crash',
-            currentVersion: 1,
-            currentStatus: 'active',
-            title: 'Crash Recovery Job',
+          version: 2,
+          operation: 'upsert',
+          payload: {
+            title: 'Newer Crash Recovery Job',
             company: 'Example Labs',
-            location: 'Surat',
-            experienceMin: 1,
-            experienceMax: 2,
-            applyUrl: 'https://example.test/jobs/crash-recovery',
-            skills: ['node'],
-            updatedAt: new Date(),
-            archivedAt: null,
+            location: 'Bengaluru',
+            experienceMin: 3,
+            experienceMax: 4,
+            applyUrl: 'https://example.test/jobs/crash-recovery-v2',
+            skills: ['typescript'],
           },
-          $setOnInsert: { createdAt: new Date() },
-        },
-        { upsert: true },
-      );
+        })
+        .expect(202);
+      expect(await processClaimedEvent('newer-version-worker')).toBe(true);
 
       await db.collection('events').updateOne(
-        { eventId: 'event-projection-crash' },
-        { $set: { processingStatus: 'processing', claimedAt: new Date(Date.now() - 1000), claimedBy: 'dead-worker-crash', availableAt: new Date(0), updatedAt: new Date() } },
+        { tenantId: 'tenant-crash', sourceId: 'main', eventId: 'event-projection-crash' },
+        { $set: { claimedAt: new Date(Date.now() - config.claimTimeoutMs - 1000) } },
       );
+      expect(await processClaimedEvent('recovery-worker-crash')).toBe(true);
 
-      const recoveryOutcome = await processClaimedEvent('recovery-worker-crash');
-      expect(recoveryOutcome).toBe(true);
-
-      const finalEvent = await db.collection('events').findOne({ eventId: 'event-projection-crash' });
-      const finalJob = await db.collection('jobs').findOne({ externalJobId: 'job-projection-crash' });
+      const finalEvent = await db.collection('events').findOne({ tenantId: 'tenant-crash', sourceId: 'main', eventId: 'event-projection-crash' });
+      const newerEvent = await db.collection('events').findOne({ tenantId: 'tenant-crash', sourceId: 'main', eventId: 'event-projection-v2' });
+      const finalJob = await db.collection('jobs').findOne({ tenantId: 'tenant-crash', sourceId: 'main', externalJobId: 'job-projection-crash' });
       expect(finalEvent?.processingStatus).toBe('completed');
       expect(finalEvent?.attemptCount).toBe(2);
-      expect(finalJob?.currentVersion).toBe(1);
-      expect(await db.collection('jobs').countDocuments({ externalJobId: 'job-projection-crash' })).toBe(1);
+      expect(finalEvent?.attemptHistory).toHaveLength(1);
+      expect(finalEvent?.attemptHistory[0].outcome).toBe('stale-noop');
+      expect(newerEvent?.processingStatus).toBe('completed');
+      expect(newerEvent?.attemptCount).toBe(1);
+      expect(newerEvent?.attemptHistory[0].outcome).toBe('success');
+      expect(finalJob?.currentVersion).toBe(2);
+      expect(finalJob?.title).toBe('Newer Crash Recovery Job');
+      expect(await db.collection('jobs').countDocuments({ tenantId: 'tenant-crash', sourceId: 'main', externalJobId: 'job-projection-crash' })).toBe(1);
 
       const badCursor = await supertest(app)
         .get('/jobs')

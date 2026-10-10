@@ -176,12 +176,13 @@ export async function claimNextEvent(workerId: string): Promise<EventRecord | nu
   return result as EventRecord;
 }
 
-export async function processClaimedEvent(workerId: string): Promise<boolean> {
+export async function processClaimedEvent(workerId: string, afterProjection?: () => Promise<void>): Promise<boolean> {
   const event = await claimNextEvent(workerId);
   if (!event) {
     return false;
   }
 
+  let projectionApplied = false;
   try {
     const job = await getJobByIdentity(event.tenantId, event.sourceId, event.externalJobId);
     const currentVersion = job?.currentVersion ?? 0;
@@ -211,22 +212,26 @@ export async function processClaimedEvent(workerId: string): Promise<boolean> {
       return true;
     }
 
-    const applied = await applyJobProjection(event);
-    if (!applied) {
+    projectionApplied = await applyJobProjection(event);
+    if (!projectionApplied) {
       await finalizeEvent(event, 'stale-noop', null, 'completed', null);
       return true;
     }
-
-    await finalizeEvent(event, 'success', null, 'completed', null);
-    return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'unknown processing error';
     await finalizeEvent(event, 'processing-error', message, 'failed', 500);
     return true;
   }
+
+  if (projectionApplied && afterProjection) {
+    await afterProjection();
+  }
+
+  await finalizeEvent(event, 'success', null, 'completed', null);
+  return true;
 }
 
-async function applyJobProjection(event: EventRecord): Promise<boolean> {
+export async function applyJobProjection(event: EventRecord): Promise<boolean> {
   const db = await getDb();
   const jobData = event.payload
     ? {
@@ -260,23 +265,70 @@ async function applyJobProjection(event: EventRecord): Promise<boolean> {
     ...(event.operation === 'archive' ? { archivedAt: now } : { archivedAt: null }),
   };
 
-  const result = await db.collection<JobRecord>('jobs').findOneAndUpdate(
-    {
+  try {
+    const result = await db.collection<JobRecord>('jobs').findOneAndUpdate(
+      {
+        tenantId: event.tenantId,
+        sourceId: event.sourceId,
+        externalJobId: event.externalJobId,
+        $or: [{ currentVersion: { $exists: false } }, { currentVersion: { $lt: event.version } }],
+      },
+      {
+        $set: base,
+        $setOnInsert: {
+          createdAt: now,
+        },
+      },
+      { upsert: true, returnDocument: 'after' },
+    );
+
+    return result !== null;
+  } catch (error: unknown) {
+    const mongoError = error as { code?: number };
+    if (mongoError.code !== 11000) {
+      throw error;
+    }
+
+    let currentJob = await db.collection<JobRecord>('jobs').findOne({
       tenantId: event.tenantId,
       sourceId: event.sourceId,
       externalJobId: event.externalJobId,
-      $or: [{ currentVersion: { $exists: false } }, { currentVersion: { $lt: event.version } }],
-    },
-    {
-      $set: base,
-      $setOnInsert: {
-        createdAt: now,
-      },
-    },
-    { upsert: true, returnDocument: 'after' },
-  );
+    });
+    if (!currentJob) {
+      throw error;
+    }
 
-  return result !== null;
+    for (let retry = 0; retry < 3; retry += 1) {
+      if (currentJob.currentVersion >= event.version) {
+        return false;
+      }
+
+      const retryResult = await db.collection<JobRecord>('jobs').findOneAndUpdate(
+        {
+          tenantId: event.tenantId,
+          sourceId: event.sourceId,
+          externalJobId: event.externalJobId,
+          $or: [{ currentVersion: { $exists: false } }, { currentVersion: { $lt: event.version } }],
+        },
+        { $set: base },
+        { returnDocument: 'after' },
+      );
+      if (retryResult !== null) {
+        return true;
+      }
+
+      currentJob = await db.collection<JobRecord>('jobs').findOne({
+        tenantId: event.tenantId,
+        sourceId: event.sourceId,
+        externalJobId: event.externalJobId,
+      });
+      if (!currentJob) {
+        throw error;
+      }
+    }
+
+    throw error;
+  }
 }
 
 async function handleRetry(event: EventRecord, providerOutcome: { status: string; code: number; reason: string }): Promise<void> {

@@ -110,7 +110,8 @@ export function parseAndValidateEvent(input: unknown): ValidationResult {
     return { ok: false, error: 'experienceMin must be less than or equal to experienceMax.' };
   }
 
-  if (typeof payload.applyUrl !== 'string' || !payload.applyUrl.startsWith('https://')) {
+  const applyUrl = typeof payload.applyUrl === 'string' ? payload.applyUrl.trim() : '';
+  if (!isValidHttpsUrl(applyUrl)) {
     return { ok: false, error: 'applyUrl must use HTTPS.' };
   }
 
@@ -141,7 +142,7 @@ export function parseAndValidateEvent(input: unknown): ValidationResult {
     location: location.value,
     experienceMin: Number(payload.experienceMin),
     experienceMax: Number(payload.experienceMax),
-    applyUrl: payload.applyUrl as string,
+    applyUrl: new URL(applyUrl).toString(),
     skills,
   };
 
@@ -164,6 +165,19 @@ export function parseAndValidateEvent(input: unknown): ValidationResult {
 
 function isIdentifier(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '' && value === value.trim();
+}
+
+function isValidHttpsUrl(value: string): boolean {
+  if (!value) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' && parsed.hostname.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 function getNonBlankString(value: unknown, field: string): { ok: true; value: string } | { ok: false; error: string } {

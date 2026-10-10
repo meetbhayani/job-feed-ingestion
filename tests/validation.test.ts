@@ -36,6 +36,80 @@ describe('event validation', () => {
     expect(payload.skills).toEqual(['typescript', 'mongodb']);
   });
 
+  it('accepts valid HTTPS URLs and rejects malformed or non-HTTPS protocols', () => {
+    expect(parseAndValidateEvent({
+      tenantId: 'tenant-a',
+      sourceId: 'main',
+      eventId: 'event-102',
+      externalJobId: 'alpha',
+      version: 1,
+      operation: 'upsert',
+      payload: {
+        title: 'Role',
+        company: 'Acme',
+        location: 'Surat',
+        experienceMin: 1,
+        experienceMax: 2,
+        applyUrl: 'https://example.test/jobs/alpha?ref=ok',
+        skills: ['aws'],
+      },
+    }).ok).toBe(true);
+
+    expect(parseAndValidateEvent({
+      tenantId: 'tenant-a',
+      sourceId: 'main',
+      eventId: 'event-103',
+      externalJobId: 'alpha',
+      version: 1,
+      operation: 'upsert',
+      payload: {
+        title: 'Role',
+        company: 'Acme',
+        location: 'Surat',
+        experienceMin: 1,
+        experienceMax: 2,
+        applyUrl: 'https://',
+        skills: ['aws'],
+      },
+    }).ok).toBe(false);
+
+    expect(parseAndValidateEvent({
+      tenantId: 'tenant-a',
+      sourceId: 'main',
+      eventId: 'event-104',
+      externalJobId: 'alpha',
+      version: 1,
+      operation: 'upsert',
+      payload: {
+        title: 'Role',
+        company: 'Acme',
+        location: 'Surat',
+        experienceMin: 1,
+        experienceMax: 2,
+        applyUrl: 'http://example.test/job',
+        skills: ['aws'],
+      },
+    }).ok).toBe(false);
+
+    expect(parseAndValidateEvent({
+      tenantId: 'tenant-a',
+      sourceId: 'main',
+      eventId: 'event-105',
+      externalJobId: 'alpha',
+      version: 1,
+      operation: 'upsert',
+      payload: {
+        title: 'Role',
+        company: 'Acme',
+        location: 'Surat',
+        experienceMin: 1,
+        experienceMax: 2,
+        applyUrl: 'ftp://example.test/job',
+        skills: ['aws'],
+      },
+    }).ok).toBe(false);
+  });
+
   it('rejects identifiers with surrounding whitespace', () => {
     const result = parseAndValidateEvent({
       tenantId: ' tenant-a ',
