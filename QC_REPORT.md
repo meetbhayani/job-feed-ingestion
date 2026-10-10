@@ -8,44 +8,42 @@ Verified code baseline commit: `e2a7c74876f3ea41db4d0d285dba16b1b56ec10e`
 
 Current base HEAD before these dependency-only edits: `ddb71f54a3bd235ffdacc4a939ef84620b3a353d`. The dependency changes and this QC refresh are uncommitted by request.
 
-The latest verification used `mongodb://127.0.0.1:27017/job_feed_ingestion_final_review`. The MongoDB container was healthy. Tests and demo can clear collections, so this disposable database was used for all database-backed commands.
+The earlier dependency-remediation verification used `mongodb://127.0.0.1:27017/job_feed_ingestion_final_review`. The latest supplied verification on 2026-10-10 used the default local MongoDB on `DESKTOP-FANPERU`. Tests and demo can clear collections, so use a disposable database when running them.
 
 ## Verification evidence
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Docker Compose setup | `docker compose up -d --wait` | Passed; MongoDB 7 container healthy. |
-| Clean dependencies | `npm ci` | Passed; installed 164 packages, 0 vulnerabilities. |
+| Docker Compose setup | `docker compose up -d --wait` | Passed; MongoDB container healthy. |
+| Clean dependencies | `npm ci` | Passed. |
 | Dependency audit | `npm audit` | Passed; 0 vulnerabilities. |
-| Strict TypeScript | `npm run typecheck` | Passed (`tsc --noEmit -p tsconfig.json`). |
-| Production build | `npm run build` | Passed (`tsc -p tsconfig.json`). |
-| Unit and MongoDB integration tests | `npm test` with isolated `MONGODB_URI` | Passed; 3 test files, 14 tests. |
-| Crash-recovery regression | `npm test -- tests/integration.test.ts -t "recovers an actual post-projection"` | Passed; 1 targeted real-MongoDB test. |
-| Fixture demo | `npm run demo` with `MONGODB_URI=.../job_feed_ingestion_final_review` | Passed; fixture phases completed, including expected invalid input and exact replay responses. |
-| Complete load test | `npm run loadtest` with `MONGODB_URI=.../job_feed_ingestion_final_review` and minimum defaults | Passed; actual results below. |
-| Load minimum guard | `$env:LOAD_COUNT='999'; npm run loadtest` | Rejected as expected with exit code 1 and `LOAD_COUNT must be at least 1000`; validation runs before connecting to MongoDB. |
-| Diff whitespace | `git diff --check` | Passed. |
+| Strict TypeScript | `npm run typecheck` | Passed. |
+| Production build | `npm run build` | Passed. |
+| Unit and MongoDB integration tests | `npm test` | Passed; 3 test files, 14 tests, 0 failed. |
+| Fixture demo | `npm run demo` | Completed; accepted requests returned HTTP 202, invalid input returned HTTP 400, exact replay returned HTTP 200. |
+| Complete load test | `npm run loadtest` | Completed; latest measured results below. |
+| Diff whitespace | `git diff --check` | Passed with no error output (latest supplied verification). |
 | Formatting/lint | Checked `package.json` scripts and root config files | Not configured; no formatter or linter command exists. |
-| Full dependency audit | `npm audit` after dependency remediation | Passed; 0 vulnerabilities. |
+
+The latest command outcomes above are the supplied local verification results for 2026-10-10 on Windows with Node.js 26.1, npm, Docker Compose, and MongoDB 7. The detailed crash-recovery test and dependency remediation are documented from the earlier executed verification; they are not represented as rerun in this latest result set.
 
 The dependency-remediation checks above were run on the working tree based on code commit `e2a7c74876f3ea41db4d0d285dba16b1b56ec10e`; these dependency changes have not yet been committed. The earlier audit at that baseline reported six development/test advisories, which the current manifest and lockfile now remediate. The first Vitest 4 test run exposed the removed `poolOptions` setting and parallelized files that share MongoDB state; after migrating to `maxWorkers: 1` and `fileParallelism: false`, the focused integration files passed 11/11 and the full suite passed 14/14 without the deprecation warning.
 
 ### Measured load result
 
 - Machine: `DESKTOP-FANPERU`
-- MongoDB: `job_feed_ingestion_final_review` on local MongoDB 7
+- MongoDB: default local MongoDB 7
 - Concurrency: 25
 - Distinct accepted events: 1,100
 - Exact replay requests handled: 200
-- HTTP/network errors: 0
-- HTTP p50: 57.63 ms
-- HTTP p95: 101.08 ms
-- Workload start to observed queue drain: 13,501 ms
-- Events stored and completed: 1,100 / 1,100
+- Error count: 0
+- HTTP p50: 41.6432 ms
+- HTTP p95: 70.7062 ms
+- Queue drain time: 10,463 ms
+- Actual events: 1,100
 - Expected logical jobs: 1,050; actual: 1,050
 - Out-of-order jobs: 50; final version 2: 50 / 50
 - Unrelated tenant probe: preserved
-- Load-test run completed with the default `LOAD_PORT` (3100); no port override was required.
 
 These are local development measurements, not production throughput claims.
 
