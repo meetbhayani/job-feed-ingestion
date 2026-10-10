@@ -6,7 +6,7 @@ Environment: Windows, `DESKTOP-FANPERU`, Node.js 26.1, npm, Docker Compose with 
 
 Verified code baseline commit: `e2a7c74876f3ea41db4d0d285dba16b1b56ec10e`
 
-Current base HEAD before these dependency-only edits: `ddb71f54a3bd235ffdacc4a939ef84620b3a353d`. The dependency changes and this QC refresh are uncommitted by request.
+Current repository HEAD at this report update: `9e5541989660bce1a8c491acc120343de582fe6a`.
 
 The earlier dependency-remediation verification used `mongodb://127.0.0.1:27017/job_feed_ingestion_final_review`. The latest supplied verification on 2026-10-10 used the default local MongoDB on `DESKTOP-FANPERU`. Tests and demo can clear collections, so use a disposable database when running them.
 
@@ -27,7 +27,7 @@ The earlier dependency-remediation verification used `mongodb://127.0.0.1:27017/
 
 The latest command outcomes above are the supplied local verification results for 2026-10-10 on Windows with Node.js 26.1, npm, Docker Compose, and MongoDB 7. The detailed crash-recovery test and dependency remediation are documented from the earlier executed verification; they are not represented as rerun in this latest result set.
 
-The dependency-remediation checks above were run on the working tree based on code commit `e2a7c74876f3ea41db4d0d285dba16b1b56ec10e`; these dependency changes have not yet been committed. The earlier audit at that baseline reported six development/test advisories, which the current manifest and lockfile now remediate. The first Vitest 4 test run exposed the removed `poolOptions` setting and parallelized files that share MongoDB state; after migrating to `maxWorkers: 1` and `fileParallelism: false`, the focused integration files passed 11/11 and the full suite passed 14/14 without the deprecation warning.
+The dependency-remediation checks were performed after code baseline `e2a7c74876f3ea41db4d0d285dba16b1b56ec10e`; those dependency changes are included in the subsequent repository history. The earlier audit at that baseline reported six development/test advisories, which the updated manifest and lockfile remediated. The first Vitest 4 test run exposed the removed `poolOptions` setting and parallelized files that share MongoDB state; after migrating to `maxWorkers: 1` and `fileParallelism: false`, the focused integration files passed 11/11 and the full suite passed 14/14 without the deprecation warning. These are historical verification results and are not claimed to have been rerun in the latest supplied run.
 
 ### Measured load result
 
