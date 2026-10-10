@@ -116,9 +116,17 @@ export async function listJobs(args: {
   const filter = { tenantId: args.tenantId, ...sourceFilter, ...statusFilter };
 
   const parsedLimit = Number(args.limit ?? 20);
-  const limit = Math.min(Number.isFinite(parsedLimit) ? parsedLimit : 20, 100);
+  const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(Math.floor(parsedLimit), 100) : 20;
 
-  const cursorPayload = args.cursor ? decodeCursor(args.cursor) : null;
+  let cursorPayload: { updatedAt: string; id: string } | null = null;
+  if (args.cursor) {
+    try {
+      cursorPayload = decodeCursor(args.cursor);
+    } catch {
+      throw new Error('invalid cursor');
+    }
+  }
+
   const cursorFilter = cursorPayload
     ? {
         $or: [
@@ -203,7 +211,12 @@ export async function processClaimedEvent(workerId: string): Promise<boolean> {
       return true;
     }
 
-    await applyJobProjection(event);
+    const applied = await applyJobProjection(event);
+    if (!applied) {
+      await finalizeEvent(event, 'stale-noop', null, 'completed', null);
+      return true;
+    }
+
     await finalizeEvent(event, 'success', null, 'completed', null);
     return true;
   } catch (error) {
@@ -213,7 +226,7 @@ export async function processClaimedEvent(workerId: string): Promise<boolean> {
   }
 }
 
-async function applyJobProjection(event: EventRecord): Promise<void> {
+async function applyJobProjection(event: EventRecord): Promise<boolean> {
   const db = await getDb();
   const jobData = event.payload
     ? {
@@ -247,7 +260,7 @@ async function applyJobProjection(event: EventRecord): Promise<void> {
     ...(event.operation === 'archive' ? { archivedAt: now } : { archivedAt: null }),
   };
 
-  await db.collection<JobRecord>('jobs').updateOne(
+  const result = await db.collection<JobRecord>('jobs').findOneAndUpdate(
     {
       tenantId: event.tenantId,
       sourceId: event.sourceId,
@@ -260,8 +273,10 @@ async function applyJobProjection(event: EventRecord): Promise<void> {
         createdAt: now,
       },
     },
-    { upsert: true },
+    { upsert: true, returnDocument: 'after' },
   );
+
+  return result !== null;
 }
 
 async function handleRetry(event: EventRecord, providerOutcome: { status: string; code: number; reason: string }): Promise<void> {

@@ -45,7 +45,10 @@ function percentile(values: number[], value: number): number {
 }
 
 async function main(): Promise<void> {
-  await connectDatabase();
+  const db = await connectDatabase();
+  await db.collection('events').deleteMany({});
+  await db.collection('jobs').deleteMany({});
+
   const { app, stopWorkers } = createApp();
   const port = Number(process.env.LOAD_PORT ?? 3100);
   const server = app.listen(port);
@@ -65,8 +68,12 @@ async function main(): Promise<void> {
     const db = await getDb();
     const expectedJobs = distinctCount + outOfOrderJobs;
     const actualJobs = await db.collection('jobs').countDocuments({ tenantId: { $in: tenantIds } });
-    const staleVersions = await db.collection('jobs').countDocuments({ tenantId: { $in: [`${tenantPrefix}-out-0`, `${tenantPrefix}-out-1`] }, currentVersion: { $ne: 2 } });
-    console.log(JSON.stringify({ machine: os.hostname(), mongoUri: process.env.MONGODB_URI ?? 'default local MongoDB', concurrency, distinctAccepted: first.accepted, replayCount: replays.replay, errorCount: first.errors + replays.errors, httpP50Ms: percentile(latencies, 50), httpP95Ms: percentile(latencies, 95), queueDrainMs: Math.round(drainMs), finalStateChecks: { expectedJobs, actualJobs, outOfOrderJobsAtVersion2: outOfOrderJobs - staleVersions } }, null, 2));
+    const staleOutOfOrderJobs = await db.collection('jobs').countDocuments({
+      tenantId: { $in: [`${tenantPrefix}-out-0`, `${tenantPrefix}-out-1`] },
+      externalJobId: /^out-job-/,
+      currentVersion: { $ne: 2 },
+    });
+    console.log(JSON.stringify({ machine: os.hostname(), mongoUri: process.env.MONGODB_URI ?? 'default local MongoDB', concurrency, distinctAccepted: first.accepted, replayCount: replays.replay, errorCount: first.errors + replays.errors, httpP50Ms: percentile(latencies, 50), httpP95Ms: percentile(latencies, 95), queueDrainMs: Math.round(drainMs), finalStateChecks: { expectedJobs, actualJobs, outOfOrderJobsAtVersion2: outOfOrderJobs - staleOutOfOrderJobs } }, null, 2));
   } finally {
     stopWorkers(); server.close(); await closeDatabase();
   }

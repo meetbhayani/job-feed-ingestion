@@ -72,8 +72,16 @@ export function createApp(): { app: Express; stopWorkers: () => void } {
     const limit = Number(req.query.limit ?? 20);
     const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
 
-    const page = await listJobs({ tenantId, sourceId, status, limit, cursor });
-    res.json(page);
+    try {
+      const page = await listJobs({ tenantId, sourceId, status, limit, cursor });
+      res.json(page);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'invalid cursor') {
+        res.status(400).json({ error: 'cursor is invalid or malformed.' });
+        return;
+      }
+      throw error;
+    }
   });
 
   const stopWorkers = startWorkers();

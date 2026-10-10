@@ -4,7 +4,7 @@ import { createApp } from '../src/app.js';
 import { config } from '../src/config.js';
 import { closeDatabase, connectDatabase, resetCollections } from '../src/db.js';
 import { getDb } from '../src/db.js';
-import { processClaimedEvent } from '../src/service.js';
+import { claimNextEvent, processClaimedEvent } from '../src/service.js';
 
 let app: ReturnType<typeof createApp>['app'];
 let stopWorkers: () => void;
@@ -275,5 +275,89 @@ describe('ingestion service', () => {
       .query({ tenantId: 'tenant-page', sourceId: 'main', status: 'active', limit: 2, cursor: firstPage.body.nextCursor });
     expect(secondPage.body.items.length).toBe(2);
     expect(secondPage.body.nextCursor).not.toBeNull();
+  });
+
+  it('rejects malformed pagination cursors and recovers after a projection write before ack', async () => {
+    await restartApp();
+    const originalTimeout = config.claimTimeoutMs;
+    config.claimTimeoutMs = 5;
+
+    try {
+      await supertest(app)
+        .post('/events')
+        .send({
+          tenantId: 'tenant-crash',
+          sourceId: 'main',
+          eventId: 'event-projection-crash',
+          externalJobId: 'job-projection-crash',
+          version: 1,
+          operation: 'upsert',
+          payload: {
+            title: 'Crash Recovery Job',
+            company: 'Example Labs',
+            location: 'Surat',
+            experienceMin: 1,
+            experienceMax: 2,
+            applyUrl: 'https://example.test/jobs/crash-recovery',
+            skills: ['node'],
+          },
+        })
+        .expect(202);
+
+      const db = await getDb();
+      const claimed = await claimNextEvent('dead-worker-crash');
+      expect(claimed?.eventId).toBe('event-projection-crash');
+
+      await db.collection('jobs').updateOne(
+        {
+          tenantId: 'tenant-crash',
+          sourceId: 'main',
+          externalJobId: 'job-projection-crash',
+          $or: [{ currentVersion: { $exists: false } }, { currentVersion: { $lt: 1 } }],
+        },
+        {
+          $set: {
+            tenantId: 'tenant-crash',
+            sourceId: 'main',
+            externalJobId: 'job-projection-crash',
+            currentVersion: 1,
+            currentStatus: 'active',
+            title: 'Crash Recovery Job',
+            company: 'Example Labs',
+            location: 'Surat',
+            experienceMin: 1,
+            experienceMax: 2,
+            applyUrl: 'https://example.test/jobs/crash-recovery',
+            skills: ['node'],
+            updatedAt: new Date(),
+            archivedAt: null,
+          },
+          $setOnInsert: { createdAt: new Date() },
+        },
+        { upsert: true },
+      );
+
+      await db.collection('events').updateOne(
+        { eventId: 'event-projection-crash' },
+        { $set: { processingStatus: 'processing', claimedAt: new Date(Date.now() - 1000), claimedBy: 'dead-worker-crash', availableAt: new Date(0), updatedAt: new Date() } },
+      );
+
+      const recoveryOutcome = await processClaimedEvent('recovery-worker-crash');
+      expect(recoveryOutcome).toBe(true);
+
+      const finalEvent = await db.collection('events').findOne({ eventId: 'event-projection-crash' });
+      const finalJob = await db.collection('jobs').findOne({ externalJobId: 'job-projection-crash' });
+      expect(finalEvent?.processingStatus).toBe('completed');
+      expect(finalEvent?.attemptCount).toBe(2);
+      expect(finalJob?.currentVersion).toBe(1);
+      expect(await db.collection('jobs').countDocuments({ externalJobId: 'job-projection-crash' })).toBe(1);
+
+      const badCursor = await supertest(app)
+        .get('/jobs')
+        .query({ tenantId: 'tenant-crash', sourceId: 'main', status: 'active', limit: 20, cursor: 'not-valid-base64' });
+      expect(badCursor.status).toBe(400);
+    } finally {
+      config.claimTimeoutMs = originalTimeout;
+    }
   });
 });
