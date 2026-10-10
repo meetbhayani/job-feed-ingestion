@@ -191,7 +191,12 @@ async function main(): Promise<void> {
     const expectedJobs = distinctCount + outOfOrderJobs;
     const runEvents = await eventsCollection.find({ tenantId: { $in: tenantIds } }).toArray();
     const runJobs = await jobsCollection.find({ tenantId: { $in: tenantIds } }).toArray();
+    const expectedStandardJobIds = new Set(Array.from({ length: distinctCount }, (_, index) => `job-${index}`));
+    const expectedOutJobIds = new Set(Array.from({ length: outOfOrderJobs }, (_, index) => `out-job-${index}`));
+    const standardJobRows = runJobs.filter((job) => typeof job.externalJobId === 'string' && expectedStandardJobIds.has(job.externalJobId));
+    const actualStandardJobIds = new Set(standardJobRows.map((job) => job.externalJobId));
     const outJobRows = runJobs.filter((job) => typeof job.externalJobId === 'string' && job.externalJobId.startsWith('out-job-'));
+    const actualOutJobIds = new Set(outJobRows.map((job) => job.externalJobId));
     const outJobsAtVersion2 = outJobRows.filter((job) => job.currentVersion === 2 && job.currentStatus === 'active');
     const probeEventAfter = await eventsCollection.findOne({ _id: probeEventId });
     const probeJobAfter = await jobsCollection.findOne({ _id: probeJobId });
@@ -205,7 +210,9 @@ async function main(): Promise<void> {
     assertInvariant(runEvents.length === expectedEventCount, `Expected ${expectedEventCount} stored events; found ${runEvents.length}.`);
     assertInvariant(runEvents.every((event) => event.processingStatus === 'completed'), 'One or more accepted load-test events did not complete successfully.');
     assertInvariant(runJobs.length === expectedJobs, `Expected ${expectedJobs} logical jobs; found ${runJobs.length}.`);
+    assertInvariant(standardJobRows.length === distinctCount && actualStandardJobIds.size === distinctCount && [...expectedStandardJobIds].every((jobId) => actualStandardJobIds.has(jobId)), `Not all ${distinctCount} expected standard job identities exist exactly once.`);
     assertInvariant(outJobRows.length === outOfOrderJobs, `Expected ${outOfOrderJobs} out-of-order job projections; found ${outJobRows.length}.`);
+    assertInvariant(actualOutJobIds.size === outOfOrderJobs && [...expectedOutJobIds].every((jobId) => actualOutJobIds.has(jobId)), 'Out-of-order job identities do not exactly match the scenario.');
     assertInvariant(outJobsAtVersion2.length === outOfOrderJobs, `Only ${outJobsAtVersion2.length} of ${outOfOrderJobs} out-of-order jobs reached active version 2.`);
     assertInvariant(probeEventAfter?.payloadHash === markerId && probeEventAfter.processingStatus === 'completed', 'Scoped load cleanup modified or removed the unrelated event probe.');
     assertInvariant(probeJobAfter?.externalJobId === markerId && probeJobAfter.currentVersion === 1, 'Scoped load cleanup modified or removed the unrelated job probe.');
