@@ -20,6 +20,8 @@ docker compose up -d && npm ci
 
 Copy `.env.example` to `.env` if defaults are unsuitable. `MONGODB_URI` defaults to `mongodb://127.0.0.1:27017/job_feed_ingestion`; `WORKER_COUNT` defaults to 2; `CLAIM_TIMEOUT_MS` and `RETRY_BACKOFF_MS` default to 5000 and 1000 respectively.
 
+**Demo safety:** `npm run demo` clears all documents in the configured `events` and `jobs` collections before running. Set `MONGODB_URI` to a dedicated disposable database first; do not use a shared or production database. See DEMO.md for the scenario and expected results.
+
 ## Commands
 
 ```sh
@@ -45,4 +47,4 @@ Processing is durable and idempotent at the projection boundary, not exactly-onc
 
 ## Load result
 
-Fresh local verification on 2026-10-10 using the default local MongoDB on `DESKTOP-FANPERU`: concurrency 25; 1,100 distinct accepts; 200 exact replays; 0 errors; HTTP p50 41.6432 ms; p95 70.7062 ms; queue drain 10,463 ms; 1,050 expected jobs; 1,100 actual events; all 50 out-of-order jobs ended at version 2; unrelated tenant probe preserved. The script enforces at least 1,000 distinct events, 200 replays, and 50 out-of-order jobs, scopes cleanup to UUID-namespaced test tenants, and verifies an unrelated tenant probe remains unchanged. These local results are not production-capacity claims.
+Fresh local verification on 2026-10-11 using Docker MongoDB 7 on `DESKTOP-FANPERU` and disposable database `job_feed_ingestion_final_submission`: concurrency 25; 1,100 distinct accepts; 200 exact replays; 0 errors; HTTP p50 61.7182 ms; p95 89.6925 ms; queue drain 14,496 ms; 1,050 expected and actual jobs; 1,100 actual events; all 50 out-of-order jobs ended at version 2; unrelated tenant probe preserved. The script enforces at least 1,000 distinct events, 200 replays, and 50 out-of-order jobs, scopes cleanup to UUID-namespaced test tenants, and verifies an unrelated tenant probe remains unchanged. These local results are not production-capacity claims. The previous supplied 2026-10-10 run measured p50 41.6432 ms, p95 70.7062 ms, and 10,463 ms queue drain.

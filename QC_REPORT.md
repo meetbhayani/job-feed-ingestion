@@ -1,31 +1,33 @@
 # QC report
 
-Date: 2026-10-10
+Date: 2026-10-11
 
 Environment: Windows, `DESKTOP-FANPERU`, Node.js 26.1, npm, Docker Compose with MongoDB 7.
 
+Repository: https://github.com/meetbhayani/job-feed-ingestion (public; verified by fetching the GitHub repository page).
+
 Verified code baseline commit: `e2a7c74876f3ea41db4d0d285dba16b1b56ec10e`
 
-Current repository HEAD at this report update: `9e5541989660bce1a8c491acc120343de582fe6a`.
+Current repository HEAD at verification: `b37bc80286a559abea933a7c35e2a1d8e7b9e61f` (matches `origin/master`). Documentation edits in this audit are uncommitted.
 
-The earlier dependency-remediation verification used `mongodb://127.0.0.1:27017/job_feed_ingestion_final_review`. The latest supplied verification on 2026-10-10 used the default local MongoDB on `DESKTOP-FANPERU`. Tests and demo can clear collections, so use a disposable database when running them.
+The latest verification used `mongodb://127.0.0.1:27017/job_feed_ingestion_final_submission`. Tests and demo can clear collections, so a dedicated disposable database was used. Earlier dependency-remediation verification used `job_feed_ingestion_final_review`.
 
 ## Verification evidence
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Docker Compose setup | `docker compose up -d --wait` | Passed; MongoDB container healthy. |
-| Clean dependencies | `npm ci` | Passed. |
+| Docker Compose setup | `docker compose up -d --wait` | Passed; MongoDB 7 container healthy. |
+| Clean dependencies | `npm ci` | Passed; 164 packages installed, 0 vulnerabilities reported. |
 | Dependency audit | `npm audit` | Passed; 0 vulnerabilities. |
 | Strict TypeScript | `npm run typecheck` | Passed. |
 | Production build | `npm run build` | Passed. |
-| Unit and MongoDB integration tests | `npm test` | Passed; 3 test files, 14 tests, 0 failed. |
-| Fixture demo | `npm run demo` | Completed; accepted requests returned HTTP 202, invalid input returned HTTP 400, exact replay returned HTTP 200. |
-| Complete load test | `npm run loadtest` | Completed; latest measured results below. |
-| Diff whitespace | `git diff --check` | Passed with no error output (latest supplied verification). |
+| Unit and MongoDB integration tests | `npm test` with isolated `MONGODB_URI` | Passed; 3 test files, 14 tests, 0 failed. Includes real crash-recovery integration coverage. |
+| Fixture demo | `npm run demo` with isolated `MONGODB_URI` | Completed; valid requests returned HTTP 202, invalid input HTTP 400, exact replay HTTP 200. |
+| Complete load test | `npm run loadtest` with isolated `MONGODB_URI` and minimum defaults | Completed; latest measured results below. |
+| Diff whitespace | `git diff --check` | Passed with no error output on 2026-10-11. |
 | Formatting/lint | Checked `package.json` scripts and root config files | Not configured; no formatter or linter command exists. |
 
-The latest command outcomes above are the supplied local verification results for 2026-10-10 on Windows with Node.js 26.1, npm, Docker Compose, and MongoDB 7. The detailed crash-recovery test and dependency remediation are documented from the earlier executed verification; they are not represented as rerun in this latest result set.
+The latest command outcomes above were run locally on 2026-10-11 on Windows with Node.js 26.1, npm, Docker Compose, and MongoDB 7. The October 10 metrics remain historical and are not represented as the latest run.
 
 The dependency-remediation checks were performed after code baseline `e2a7c74876f3ea41db4d0d285dba16b1b56ec10e`; those dependency changes are included in the subsequent repository history. The earlier audit at that baseline reported six development/test advisories, which the updated manifest and lockfile remediated. The first Vitest 4 test run exposed the removed `poolOptions` setting and parallelized files that share MongoDB state; after migrating to `maxWorkers: 1` and `fileParallelism: false`, the focused integration files passed 11/11 and the full suite passed 14/14 without the deprecation warning. These are historical verification results and are not claimed to have been rerun in the latest supplied run.
 
@@ -37,15 +39,18 @@ The dependency-remediation checks were performed after code baseline `e2a7c74876
 - Distinct accepted events: 1,100
 - Exact replay requests handled: 200
 - Error count: 0
-- HTTP p50: 41.6432 ms
-- HTTP p95: 70.7062 ms
-- Queue drain time: 10,463 ms
+- HTTP p50: 61.7182 ms
+- HTTP p95: 89.6925 ms
+- Queue drain time: 14,496 ms
 - Actual events: 1,100
 - Expected logical jobs: 1,050; actual: 1,050
 - Out-of-order jobs: 50; final version 2: 50 / 50
 - Unrelated tenant probe: preserved
+- Database: `job_feed_ingestion_final_submission` (disposable local database)
 
 These are local development measurements, not production throughput claims.
+
+The previous supplied October 10 run measured p50 41.6432 ms, p95 70.7062 ms, and 10,463 ms queue drain. It is retained here only as historical context.
 
 ## Correctness challenges
 
@@ -55,6 +60,8 @@ These are local development measurements, not production throughput claims.
 4. **Scaling text presents a burst estimate as a measurement or drains against burst rather than baseline arrival.** `SCALE.md` labels estimates as theoretical, calculates backlog with the specified max formula, and drains against the ongoing 10-million/day rate. README load metrics were compared with the final script output.
 
 ## Implementation and documentation review
+
+- Git history includes the early design/quality record (`7f80538`) and a QC-only finalization commit (`c902322`). No history was rewritten. The GitHub repository is public, and local `master` matches `origin/master` at the SHA above.
 
 - README endpoint status examples match the Express routes and service behavior: 202 new acceptance, 200 exact replay, 409 identity conflict, 400 validation error, scoped event reads, cursor jobs pages, and MongoDB health readiness.
 - Mongo indexes match `src/db.ts`: unique event `(tenantId, sourceId, eventId)`, claim scan `(processingStatus, availableAt, claimedAt)`, unique job `(tenantId, sourceId, externalJobId)`, and listing `(tenantId, sourceId, currentStatus, updatedAt)`.
@@ -74,7 +81,7 @@ Planning assumptions, not measured service capacity:
 
 ## Data-safety disclosure
 
-An exploratory integration test was run before the verification database was isolated. It used the default `MONGODB_URI` database (`job_feed_ingestion`); the integration test setup calls `resetCollections()`, which deletes that database's `events` and `jobs` collections. I cannot determine whether those collections held user data or restore their pre-run contents without a backup. Later verification used isolated `job_feed_ingestion_submission_verify` and `job_feed_ingestion_review` databases. The load test itself uses only tenant-scoped cleanup and verified its unrelated tenant probe remained preserved.
+An exploratory integration test was run before the verification database was isolated. It used the default `MONGODB_URI` database (`job_feed_ingestion`); the integration test setup calls `resetCollections()`, which deletes that database's `events` and `jobs` collections. I cannot determine whether those collections held user data or restore their pre-run contents without a backup. All later verification used isolated databases, most recently `job_feed_ingestion_final_submission`. The load test itself uses only tenant-scoped cleanup and verified its unrelated tenant probe remained preserved.
 
 ## Remaining risks and limitations
 
